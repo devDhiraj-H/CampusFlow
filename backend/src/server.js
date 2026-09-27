@@ -1,5 +1,6 @@
 import express from "express";
 import ticketRouter from "./routes/ticketRoutes.js"
+import authRouter from "./routes/authRoutes.js";
 import "dotenv/config"
 
 const app = express();
@@ -13,6 +14,8 @@ app.get("/", (req, res)=> {
 });
 
 app.use("/api/tickets", ticketRouter);
+
+app.use("/api/auth", authRouter);
 
 app.listen(port, ()=>{
     console.log(`Server is listening on the port : ${port}`);
