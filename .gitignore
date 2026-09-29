@@ -28,3 +28,6 @@ dist-ssr
 *.sw?
 
 doc.pdf
+
+# Project Status & Handover (CLI State)
+PROJECT_STATUS.md

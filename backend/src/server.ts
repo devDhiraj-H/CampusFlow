@@ -9,13 +9,19 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { getOrCreateGrpcServer } from "./grpc/studentServer.js";
 import { startOutboxRelay, stopOutboxRelay } from "./kafka/outboxRelay.js";
 import { startNotificationWorker, stopNotificationWorker } from "./kafka/notificationWorker.js";
+import { createAndMountApolloServer } from "./graphql/apolloServer.js";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const GRPC_PORT = process.env.GRPC_PORT ? parseInt(process.env.GRPC_PORT, 10) : 50051;
 
 // Core Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Request logger for development
@@ -35,6 +41,7 @@ app.get("/health", async (_req: Request, res: Response) => {
       database: "connected",
       grpc: `listening_on_${GRPC_PORT}`,
       kafka: "streaming_enabled",
+      graphql: "enabled_on_/graphql",
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Database unreachable";
@@ -51,11 +58,12 @@ app.get("/health", async (_req: Request, res: Response) => {
 // Root API welcome
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    name: "CampusFlow API, RPC & Event Engine",
+    name: "CampusFlow API, RPC, GraphQL & Event Engine",
     version: "1.0.0",
-    description: "Campus Operations, gRPC Microservice, Apache Kafka & Outbox Pipeline",
+    description: "Campus Operations, GraphQL Gateway, gRPC Microservice, Apache Kafka & Outbox Pipeline",
     endpoints: {
       health: "/health",
+      graphql: "/graphql",
       auth: "/api/auth",
       students: "/api/students",
       tickets: "/api/tickets",
@@ -65,10 +73,14 @@ app.get("/", (_req: Request, res: Response) => {
   });
 });
 
-// Mount Routes
+// Mount REST Routes
 app.use("/api/auth", authRouter);
 app.use("/api/students", studentRouter);
 app.use("/api/tickets", ticketRouter);
+
+// Mount GraphQL API Gateway (Apollo Server)
+const apolloServer = await createAndMountApolloServer(app);
+console.log(`🧭 GraphQL Gateway available at http://localhost:${PORT}/graphql`);
 
 // 404 Handler
 app.use((req: Request, res: Response) => {
@@ -83,8 +95,9 @@ app.use(errorHandler);
 
 // 1. Start HTTP Server
 const server = app.listen(PORT, () => {
-  console.log(`🚀 CampusFlow HTTP API running on port ${PORT}`);
+  console.log(`🚀 CampusFlow HTTP & GraphQL API running on port ${PORT}`);
   console.log(`👉 Health check: http://localhost:${PORT}/health`);
+  console.log(`👉 GraphQL Playground: http://localhost:${PORT}/graphql`);
 });
 
 // 2. Start gRPC RPC Server
@@ -105,11 +118,12 @@ const shutdown = async (signal: string) => {
   server.close(async () => {
     console.log("HTTP server closed.");
     try {
+      await apolloServer.stop();
       stopOutboxRelay();
       await stopNotificationWorker();
       await grpcServer.stop();
       await pool.end();
-      console.log("All connections (Postgres, Kafka, gRPC) closed cleanly.");
+      console.log("All connections (Postgres, Kafka, gRPC, Apollo) closed cleanly.");
     } catch (err) {
       console.error("Error during graceful shutdown:", err);
     }
