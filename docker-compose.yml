@@ -1,0 +1,87 @@
+services:
+  # 1. Relational Database with Auto-Schema Init
+  postgres:
+    image: postgres:16-alpine
+    container_name: campusflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: campusflow
+    volumes:
+      - campusflow_pgdata:/var/lib/postgresql/data
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5433:5432" # Exposed on 5433 to avoid conflicts with host PostgreSQL
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d campusflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campusflow-network
+
+  # 2. Apache Kafka in KRaft Mode (Lightweight, No Zookeeper Required)
+  kafka:
+    image: apache/kafka:latest
+    container_name: campusflow-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - campusflow_kafkadata:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+    networks:
+      - campusflow-network
+
+  # 3. CampusFlow Core Backend (TypeScript Service)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: campusflow-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: campusflow
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: super_secret_jwt_key_campusflow_2026
+      GRPC_PORT: 50051
+      GRPC_STUDENT_HOST: localhost:50051
+    ports:
+      - "3000:3000"
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - campusflow-network
+
+networks:
+  campusflow-network:
+    driver: bridge
+
+volumes:
+  campusflow_pgdata:
+    driver: local
+  campusflow_kafkadata:
+    driver: local

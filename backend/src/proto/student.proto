@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package campusflow.student;
+
+// Internal high-performance RPC service for student profile lookups and eligibility checks
+service StudentRpcService {
+  // Retrieve comprehensive student profile by PRN
+  rpc GetStudentProfile (StudentProfileRequest) returns (StudentProfileResponse);
+
+  // Validate student eligibility to raise a ticket in a specific category (e.g., HOSTEL)
+  rpc ValidateEligibility (EligibilityRequest) returns (EligibilityResponse);
+}
+
+message StudentProfileRequest {
+  string prn = 1;
+}
+
+message StudentProfileResponse {
+  bool found = 1;
+  string prn = 2;
+  string name = 3;
+  string email = 4;
+  string department = 5;
+  int32 year = 6;
+  string roll_no = 7;
+  bool hosteller = 8;
+  string error_message = 9;
+}
+
+message EligibilityRequest {
+  string prn = 1;
+  string category = 2;
+}
+
+message EligibilityResponse {
+  bool is_eligible = 1;
+  string reason = 2;
+  string department = 3;
+  bool is_hosteller = 4;
+  string student_name = 5;
+}
