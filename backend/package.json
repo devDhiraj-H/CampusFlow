@@ -9,6 +9,7 @@
     "build": "tsc && cp -r src/proto dist/proto",
     "start": "node dist/server.js",
     "test:grpc": "tsx src/grpc/testGrpcClient.ts",
+    "test:kafka": "node dist/kafka/testKafkaPipeline.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "dotenv": "^18.0.4",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "kafkajs": "^2.2.4",
     "nodemon": "^3.1.14",
     "pg": "^8.23.0"
   },

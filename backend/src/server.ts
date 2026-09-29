@@ -7,6 +7,8 @@ import studentRouter from "./routes/studentRoutes.js";
 import ticketRouter from "./routes/ticketRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { getOrCreateGrpcServer } from "./grpc/studentServer.js";
+import { startOutboxRelay, stopOutboxRelay } from "./kafka/outboxRelay.js";
+import { startNotificationWorker, stopNotificationWorker } from "./kafka/notificationWorker.js";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -32,6 +34,7 @@ app.get("/health", async (_req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
       database: "connected",
       grpc: `listening_on_${GRPC_PORT}`,
+      kafka: "streaming_enabled",
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Database unreachable";
@@ -48,15 +51,16 @@ app.get("/health", async (_req: Request, res: Response) => {
 // Root API welcome
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    name: "CampusFlow API & RPC Engine",
+    name: "CampusFlow API, RPC & Event Engine",
     version: "1.0.0",
-    description: "Campus Operations, gRPC Microservice & Distributed Ticketing",
+    description: "Campus Operations, gRPC Microservice, Apache Kafka & Outbox Pipeline",
     endpoints: {
       health: "/health",
       auth: "/api/auth",
       students: "/api/students",
       tickets: "/api/tickets",
       grpc: `0.0.0.0:${GRPC_PORT}`,
+      kafka_topic: "campus.tickets",
     },
   });
 });
@@ -77,16 +81,22 @@ app.use((req: Request, res: Response) => {
 // Global Error Handler
 app.use(errorHandler);
 
-// Start HTTP Server
+// 1. Start HTTP Server
 const server = app.listen(PORT, () => {
   console.log(`🚀 CampusFlow HTTP API running on port ${PORT}`);
   console.log(`👉 Health check: http://localhost:${PORT}/health`);
 });
 
-// Start gRPC RPC Server
+// 2. Start gRPC RPC Server
 const grpcServer = getOrCreateGrpcServer(GRPC_PORT);
 grpcServer.start().catch((err) => {
   console.error("Failed to start gRPC server:", err);
+});
+
+// 3. Start Apache Kafka Outbox Relay and Notification Worker
+startOutboxRelay(3000);
+startNotificationWorker().catch((err) => {
+  console.warn("Kafka notification worker initialization deferred/warning:", err.message);
 });
 
 // Graceful shutdown handling
@@ -95,9 +105,11 @@ const shutdown = async (signal: string) => {
   server.close(async () => {
     console.log("HTTP server closed.");
     try {
+      stopOutboxRelay();
+      await stopNotificationWorker();
       await grpcServer.stop();
       await pool.end();
-      console.log("PostgreSQL connection pool closed.");
+      console.log("All connections (Postgres, Kafka, gRPC) closed cleanly.");
     } catch (err) {
       console.error("Error during graceful shutdown:", err);
     }
